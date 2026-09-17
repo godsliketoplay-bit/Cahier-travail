@@ -137,6 +137,12 @@ var t={id:'cl'+Date.now(),name:name.trim(),operation:operation.trim(),frequency:
 function removeCleaningTask(i){if(!confirm('Supprimer cette tâche du plan de nettoyage ?'))return;config.cleaningPlan.splice(i,1);save();settings()}
 function toggleCleaningTask(i){config.cleaningPlan[i].active=!config.cleaningPlan[i].active;save();settings()}
 function editCleaningTask(i){var t=config.cleaningPlan[i];var n=prompt('Nom de la tâche :',t.name);if(n===null)return;t.name=n.trim()||t.name;var o=prompt('Opération :',t.operation||'Nettoyage et désinfection');if(o!==null)t.operation=o.trim();var f=prompt('Fréquence : daily / weekly / biweekly / monthly / interval',t.frequency||'daily');if(f&&['daily','weekly','biweekly','monthly','interval'].includes(f))t.frequency=f; if(t.frequency==='weekly'||t.frequency==='biweekly'){var w=prompt('Jours de la semaine (0 dimanche, 1 lundi... 6 samedi), ex: 1,4','1,4');if(w!==null)t.weekdays=w.split(',').map(Number).filter(function(x){return x>=0&&x<=6});} if(t.frequency==='monthly'){var dom=prompt('Jour du mois (1-31)',String(t.dayOfMonth||1));if(dom!==null)t.dayOfMonth=Math.min(31,Math.max(1,Number(dom)||1));} if(t.frequency==='interval'){var iv=prompt('Tous les combien de jours ?',String(t.intervalDays||14));if(iv!==null)t.intervalDays=Math.max(1,Number(iv)||14);} save();settings()}
+function temps(){
+var h='<div class="notice"><b>Contrôle des températures</b><br>Choisissez le moment du contrôle. La date et l’heure sont enregistrées automatiquement.</div>';
+h+='<div class="grid"><button class="tile" type="button" onclick="fridgeDailyPage(\'fridge_open\')"><b>🌅</b>Arrivée / matin</button><button class="tile" type="button" onclick="fridgeDailyPage(\'fridge_mid\')"><b>☀️</b>Midi</button></div>';
+h+='<div class="record-actions"><button type="button" onclick="home()">← Retour</button></div>';
+page('🌡️ Températures',h)
+}
 function coldEquipmentList(){
 var eq=(config.equipment||[]).filter(function(e){return /réfrig|frigo|congél|congel/i.test(e)});
 return eq.length?eq:['Réfrigérateur 1','Congélateur 1'];
