@@ -87,10 +87,70 @@ function reportPage(){
  h+='<div class="notice" style="margin-top:10px">Pour une conservation d’inspection, enregistrez le fichier du jour dans un dossier daté (par exemple « PMS 2026 »). Le rapport est un export des enregistrements locaux, pas une signature électronique.</div>';
  page('📄 Rapport du jour',h);
 }
+function reportStageResult(st){
+ var obs=st.observation||st.obs||'';
+ var r=stageRuleResult(st.type||'',{temp:st.temp,start:st.start,end:st.end,duration:st.duration});
+ if(r.result!==null)return r.result?'✓ Conforme — '+r.reason:'⚠️ Non conforme — '+r.reason;
+ if(obs)return obs;
+ return 'Contrôle enregistré — résultat à apprécier selon le protocole / la cible du PMS';
+}
+function reportEsc(v){return esc(v==null?'':v)}
+function reportLine(label,value){if(value===undefined||value===null||String(value)==='')return '';return '<tr><th>'+reportEsc(label)+'</th><td>'+reportEsc(value)+'</td></tr>'}
+function reportResultForRecord(r){
+ var d=r.data||{};
+ if(r.module==='daily_tick')return d.check||'Contrôle effectué';
+ if(r.module==='menu_dish_control')return 'Contrôle du plat enregistré';
+ if(r.module==='menu_control')return d.observation||d.wfObs||'Contrôle enregistré';
+ if(r.module==='deliveries'||r.module==='delivery')return d.decision||d.accept||d.coldChain||'Réception enregistrée';
+ if(r.module==='samples')return d.conforme===false?'⚠️ Non conforme':'✓ Enregistré';
+ if(r.module==='cleaning_session')return (d.sessionStatus==='completed'?'✓ Tous les éléments terminés':'⏹ Arrêt avant la fin')+' — '+(d.completedCount||0)+' / '+(d.totalCount||0);
+ if(r.module==='cleaning_task')return '✓ Réalisé';
+ if(r.module==='nc')return '⚠️ Non-conformité constatée';
+ if(r.module==='trace')return '✓ Traçabilité enregistrée';
+ if(r.module==='menu_served')return '✓ Menu effectivement servi enregistré';
+ if(d.check)return d.check;
+ if(d.conforme===true)return '✓ Conforme';
+ if(d.conforme===false)return '⚠️ Non conforme';
+ return 'Enregistré';
+}
+function reportRecordHTML(r){
+ var d=r.data||{},h='<section class="control"><div class="controlHead"><h3>'+reportEsc(friendlyModule(r.module))+'</h3><div><b>'+reportEsc(r.date)+' — '+reportEsc(r.time)+'</b>'+(r.operator?' · '+reportEsc(r.operator):'')+'</div></div>';
+ h+='<div class="result"><b>Résultat / statut :</b> '+reportEsc(reportResultForRecord(r))+'</div>';
+ if(r.module==='daily_tick'&&Array.isArray(d.readings)){
+  h+='<table><thead><tr><th>Équipement</th><th>Température relevée</th></tr></thead><tbody>';
+  d.readings.forEach(function(x){h+='<tr><td>'+reportEsc(x.equipment||x.appareil||'')+'</td><td>'+reportEsc(x.temperature)+' °C</td></tr>'});h+='</tbody></table>';
+  h+=reportLine('Contrôle',d.label||'');
+ } else if(r.module==='menu_dish_control'&&Array.isArray(d.stages)){
+  h+='<table><thead><tr><th>Préparation</th><th>Étape</th><th>Mesures / résultat</th></tr></thead><tbody>';
+  d.stages.forEach(function(st){var vals=[];if(st.temp!=='')vals.push('Température : '+st.temp+' °C');if(st.equip)vals.push('Équipement : '+st.equip);if(st.start)vals.push('Départ : '+st.start);if(st.end)vals.push('Fin : '+st.end);if(st.duration)vals.push('Durée : '+st.duration+' min');if(st.time)vals.push('Heure : '+st.time);h+='<tr><td>'+reportEsc(d.slot||'')+' — '+reportEsc(d.preparation||'')+'</td><td>'+reportEsc(st.label||workflowTypes[st.type]||'Contrôle')+'</td><td>'+reportEsc(vals.join(' · '))+'<br><b>'+reportEsc(reportStageResult(st))+'</b></td></tr>'});h+='</tbody></table>';
+  if(d.lots&&d.lots.length)h+=reportLine('Lots utilisés',d.lots.map(function(l){return traceLotLabel(l)}).join(' ; '));
+ } else if(r.module==='deliveries'||r.module==='delivery'){
+  h+='<table><tbody>'+reportLine('Origine',d.source)+reportLine('Fournisseur / magasin',d.supplier)+reportLine('Transport',d.transport)+reportLine('Conditions de transport',d.transportCheck||d.transportConditions)+reportLine('Emballages',d.packaging)+reportLine('Aspect / état',d.appearance)+reportLine('DLC / DDM',d.dateCheck||d.dlc)+reportLine('Catégorie',d.category)+reportLine('Température à réception',d.temperature)+reportLine('Chaîne du froid',d.coldChain)+reportLine('Lot',d.lot)+reportLine('Stockage',d.storage)+reportLine('Après réception',d.storageCheck)+reportLine('Décision',d.decision)+'</tbody></table>';
+ } else if(r.module==='samples'){
+  h+='<table><tbody>'+reportLine('Préparation',d.preparation)+reportLine('Menu / rubrique',d.slot)+reportLine('Conservation',d.retention)+reportLine('Conformité',d.conforme===true?'Conforme':d.conforme===false?'Non conforme':'')+'</tbody></table>';
+ } else if(r.module==='cleaning_session'){
+  h+='<table><tbody>'+reportLine('État de fin',d.sessionStatus==='completed'?'Tous les éléments terminés':'Arrêt avant la fin')+reportLine('Éléments réalisés',(d.completedCount||0)+' / '+(d.totalCount||0))+reportLine('Résumé',d.summary)+'</tbody></table>';
+ } else if(r.module==='cleaning_task'){
+  h+='<table><tbody>'+reportLine('Élément',d.task)+reportLine('Opération',d.operation)+'</tbody></table>';
+ } else if(r.module==='trace'){
+  h+='<table><tbody>'+reportLine('Préparation',d.preparation)+reportLine('Rubrique',d.slot)+reportLine('Lots utilisés',(d.lots||[]).map(function(l){return traceLotLabel(l)}).join(' ; '))+'</tbody></table>';
+ } else if(r.module==='menu_served'){
+  h+='<table><thead><tr><th>Rubrique</th><th>Préparation réellement servie</th><th>Statut</th></tr></thead><tbody>';
+  (d.items||[]).forEach(function(it){h+='<tr><td>'+reportEsc(it.slot)+'</td><td>'+reportEsc(it.name)+'</td><td>'+reportEsc(it.status)+'</td></tr>'});h+='</tbody></table>';
+ } else {
+  var skip={operator:1};h+='<table><tbody>';Object.keys(d).forEach(function(k){if(skip[k]||k==='stages'||k==='lots'||k==='readings')return;var v=d[k];if(typeof v==='object')v=JSON.stringify(v);h+=reportLine(friendlyField(k),v)});h+='</tbody></table>';
+ }
+ if(d.observation)h+=reportLine('Observation',d.observation);
+ if(d.action||d.correctiveAction||d.followUp)h+='<table><tbody>'+reportLine('Action corrective',d.action||d.correctiveAction)+reportLine('Suite / suivi',d.followUp)+'</tbody></table>';
+ var atts=attachmentsOf(r);if(atts.length)h+='<div class="attachments"><b>Pièces jointes :</b> '+atts.map(function(a){return reportEsc(a.name||'Pièce jointe')}).join(' · ')+'</div>';
+ h+='</section>';return h;
+}
 function officialReportHTML(){
- var d=today(),list=records.filter(function(r){return r.iso===d}).slice().sort(function(a,b){return a.createdAt.localeCompare(b.createdAt)});
- var rows=list.map(function(r){return '<section><h3>'+esc(friendlyModule(r.module))+'</h3><div><b>'+esc(r.date)+' — '+esc(r.time)+'</b></div><div>'+humanRecordSummary(r)+'</div></section>'}).join('');
- return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Rapport PMS HACCP — '+esc(d)+'</title><style>body{font-family:Arial,sans-serif;max-width:900px;margin:30px auto;color:#18232d;line-height:1.45}h1{font-size:24px}h2{font-size:18px}h3{font-size:16px;margin-bottom:5px}section{border-top:1px solid #bbb;padding:12px 0}header{border-bottom:2px solid #222;padding-bottom:12px;margin-bottom:20px}.muted{color:#555}.footer{margin-top:30px;border-top:1px solid #bbb;padding-top:12px;font-size:12px}</style></head><body><header><h1>Rapport quotidien PMS / HACCP</h1><div><b>'+esc(config.name||'Cantine')+'</b></div><div>Date : '+esc(new Date(d+'T12:00:00').toLocaleDateString('fr-FR'))+'</div><div>Généré : '+esc(new Date().toLocaleString('fr-FR'))+'</div></header><h2>Enregistrements du jour</h2>'+(rows||'<p>Aucun enregistrement.</p>')+'<div class="footer">Document généré à partir des enregistrements locaux du cahier sanitaire. Conservation et validation selon le PMS de l’établissement.</div></body></html>';
+ var d=today(),list=records.filter(function(r){return r.iso===d}).slice().sort(function(a,b){return a.createdAt.localeCompare(b.createdAt)}),menu=(config.menus&&config.menus[d])||[],served=records.filter(function(r){return r.iso===d&&r.module==='menu_served'&&!r.data?.cancelled}).sort(function(a,b){return b.createdAt.localeCompare(a.createdAt)})[0];
+ var menuHtml='<section><h2>Menu du jour</h2>';
+ if(menu.length){menuHtml+='<table><thead><tr><th>Rubrique</th><th>Menu prévu</th><th>Menu effectivement servi</th></tr></thead><tbody>';menu.forEach(function(x,i){var sv=served&&served.data&&served.data.items?served.data.items[i]:null;menuHtml+='<tr><td>'+reportEsc(x.slot)+'</td><td>'+reportEsc(x.name)+'</td><td>'+reportEsc(sv?(sv.name+' — '+sv.status):'—')+'</td></tr>'});menuHtml+='</tbody></table>'}else menuHtml+='<p>Aucun menu enregistré pour cette date.</p>';menuHtml+='</section>';
+ var controls=list.map(reportRecordHTML).join('');
+ return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Rapport PMS HACCP — '+reportEsc(d)+'</title><style>body{font-family:Arial,sans-serif;max-width:1000px;margin:25px auto;color:#18232d;line-height:1.4}h1{font-size:24px;margin-bottom:4px}h2{font-size:18px;margin:20px 0 8px}h3{font-size:16px;margin:0 0 5px}.muted{color:#555}.control{border-top:2px solid #333;padding:14px 0;page-break-inside:avoid}.controlHead{margin-bottom:8px}.result{border:1px solid #aaa;padding:8px;margin:7px 0 10px;background:#f5f5f5}table{width:100%;border-collapse:collapse;margin:7px 0}th,td{border:1px solid #aaa;padding:6px;text-align:left;vertical-align:top}th{background:#eee}.attachments{font-size:12px;margin-top:8px}.footer{margin-top:30px;border-top:1px solid #999;padding-top:12px;font-size:12px}@media print{body{margin:10mm;max-width:none}.control{page-break-inside:avoid}}</style></head><body><header><h1>Rapport quotidien PMS / HACCP</h1><div><b>'+reportEsc(config.name||'Cantine')+'</b></div><div>Date de travail : '+reportEsc(new Date(d+'T12:00:00').toLocaleDateString('fr-FR'))+'</div><div>Généré : '+reportEsc(new Date().toLocaleString('fr-FR'))+'</div></header>'+menuHtml+'<section><h2>Contrôles et enregistrements du jour</h2><p><b>'+list.length+'</b> enregistrement(s). Chaque contrôle est présenté avec sa date, son heure, son opérateur lorsqu’il est renseigné, les mesures/réponses saisies et le résultat ou statut disponible.</p></section>'+(controls||'<p>Aucun contrôle enregistré.</p>')+'<div class="footer">Document généré à partir des enregistrements locaux du cahier sanitaire. Les résultats affichés correspondent aux données réellement enregistrées. Les limites et fréquences propres à l’établissement sont celles définies dans son PMS.</div></body></html>';
 }
 function saveDailyOfficialReport(){
  var blob=new Blob([officialReportHTML()],{type:'text/html;charset=utf-8'}),name='PMS_HACCP_'+today()+'.html';triggerDownload(blob,name);alert('✓ Rapport du jour enregistré : '+name);
@@ -160,15 +220,15 @@ if(existing)h+='<div class="notice green"><b>✓ Dernier contrôle enregistré �
 h+='<div id="coldRows">';
 eq.forEach(function(e,i){
 var kind=/congél|congel/i.test(e)?'Congélateur':'Réfrigérateur';
-h+='<div class="rule coldRow" data-eq="'+esc(e)+'"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>'+esc(e)+'</b><span class="muted">'+kind+'</span></div><label>Température °C</label><input class="coldTemp" type="number" step="0.1" inputmode="decimal" placeholder="Ex. 3.2" data-eq="'+esc(e)+'"></div>';
+h+='<div class="rule coldRow" data-eq="'+esc(e)+'"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>'+esc(e)+'</b><span class="muted">'+kind+'</span></div><label>Température °C</label><input class="coldTemp" type="text" inputmode="text" autocomplete="off" placeholder="Ex. 3.2" data-eq="'+esc(e)+'"></div>';
 });
 h+='</div><button class="save" onclick="saveFridgeDaily(\''+id+'\')">✓ FAIT — enregistrer tous les contrôles</button>';
-page('🌡️ '+label,h)
+page('🌡️ '+label,h);normalizeTemperatureFields()
 }
 function saveFridgeDaily(id){
 var rows=[].slice.call(document.querySelectorAll('#coldRows .coldRow'));
 var readings=[];var missing=[];
-rows.forEach(function(row){var input=row.querySelector('.coldTemp');var v=input?input.value.trim():'';var name=row.getAttribute('data-eq')||'';if(v===''||isNaN(Number(v)))missing.push(name);else readings.push({equipment:name,temperature:Number(v)})});
+rows.forEach(function(row){var input=row.querySelector('.coldTemp');var v=input?input.value.trim():'';var name=row.getAttribute('data-eq')||'';if(v===''||isNaN(Number(v)))missing.push(name);else readings.push({equipment:name,temperature:tempNumber(v)})});
 if(missing.length){alert('Il manque la température de : '+missing.join(', '));return}
 var n=now();var d={taskId:id,label:id==='fridge_open'?'Températures froid — arrivée / matin':'Températures froid — midi',readings:readings,check:'Tous les appareils contrôlés',operator:''};
 records.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2),module:'daily_tick',createdAt:n.stamp,iso:n.iso,date:n.date,time:n.time,operator:'',data:d,attachment:null,corrections:[]});save();home()
@@ -225,14 +285,14 @@ h+='<label>Produit / ingrédient *</label><input id="trProduct" value="'+esc(l?.
 h+='<label>Source</label>'+choiceButtons('trSource',['Réception','Achat direct','Transporté par l’établissement']);
 h+='<label>Fournisseur</label><input id="trSupplier" value="'+esc(l?.supplier||'')+'" placeholder="Ex. Sysco">';
 h+='<label>Lot</label><input id="trLot" value="'+esc(l?.lot||'')+'"><label>DLC / DDM</label><input id="trDlc" type="date" value="'+esc(l?.dlc||'')+'">';
-h+='<label>Température à réception (si applicable) °C</label><input id="trTemp" type="number" step="0.1" value="'+esc(l?.receptionTemp??'')+'">';
+h+='<label>Température à réception (si applicable) °C</label><input id="trTemp" type="text" inputmode="text" autocomplete="off" value="'+esc(l?.receptionTemp??'')+'">';
 h+='<label>Stockage / emplacement</label><input id="trStorage" value="'+esc(l?.storage||'')+'" placeholder="Ex. Frigo 1">';
 h+='<label>Chaîne du froid</label>'+choiceButtons('trCold',['Conforme','Non conforme','Non applicable']);
 h+='<label>📷 Étiquettes / justificatifs — plusieurs photos possibles</label><input id="trFiles" type="file" accept="image/*,.pdf" capture="environment" multiple>';
 h+='<label>Observation (facultatif)</label><textarea id="trObs" placeholder="Seulement si nécessaire">'+esc(l?.observation||'')+'</textarea>';
 if(id)h+='<div class="notice">Photos déjà enregistrées : '+attachmentsOf(l).length+'</div>';
 h+='<button class="save" onclick="saveTraceLot(\''+(id||'')+'\')">✓ Enregistrer ce produit / lot</button>';
-page('🏷️ Produit / lot — traçabilité',h)
+page('🏷️ Produit / lot — traçabilité',h);normalizeTemperatureFields()
 }
 function saveTraceLot(id){var product=document.getElementById('trProduct')?.value.trim();if(!product){alert('Indiquez le produit / ingrédient.');return}readFiles('trFiles',5000000).then(function(atts){if(atts===null)return;var l=id?(config.traceLots||[]).find(function(x){return x.id===id}):null;if(!l){l={id:traceId(),createdAt:new Date().toISOString(),attachments:[]};config.traceLots.push(l)}l.product=product;l.source=document.getElementById('trSource')?.value||'Réception';l.supplier=document.getElementById('trSupplier')?.value.trim()||'';l.lot=document.getElementById('trLot')?.value.trim()||'';l.dlc=document.getElementById('trDlc')?.value||'';l.receptionTemp=document.getElementById('trTemp')?.value||'';l.storage=document.getElementById('trStorage')?.value.trim()||'';l.coldChain=document.getElementById('trCold')?.value||'Conforme';l.observation=document.getElementById('trObs')?.value.trim()||'';if(atts&&atts.length)l.attachments=(l.attachments||[]).concat(atts);l.active=true;save();alert('✓ Traçabilité enregistrée.');traceRegisterPage()})}
 function addLotFromMenu(i){var rows=syncMenuFromEditor();var returnTo=i;sessionStorage.setItem('traceReturnMenu',String(returnTo));traceLotPage()}
@@ -265,7 +325,7 @@ function deliveriesPage(){
   deliveryStd('dlAppearance','appearance')+
   deliveryStd('dlDate','date')+
   '<label>Famille de produits</label><select id="dlCategory"><option>Réfrigéré</option><option>Surgelé / congelé</option><option>Température ambiante</option><option>Chaud</option><option>Matériel / conditionnement</option></select>'+
-  '<label>🌡️ Température mesurée °C <span class="muted">(si pertinente)</span></label><input id="dlTemp" type="number" step="0.1" inputmode="decimal" placeholder="Mesure réelle uniquement">'+
+  '<label>🌡️ Température mesurée °C <span class="muted">(si pertinente)</span></label><input id="dlTemp" type="text" inputmode="text" autocomplete="off" placeholder="Ex. -18 ou 3.2">'+
   deliveryStd('dlCold','cold')+
   '<label>Lot / numéro de lot (si applicable)</label><input id="dlLot" placeholder="À relever sur le produit / étiquette">'+
   '<label>DLC / DDM si nécessaire</label><input id="dlDlc" type="date">'+
@@ -277,7 +337,7 @@ function deliveriesPage(){
   '<label>Observation libre (facultatif)</label><textarea id="dlObs" placeholder="Seulement si nécessaire"></textarea>'+
   '<button class="save" type="button" id="saveDeliveryBtn">✓ Enregistrer la livraison / course</button>'+
   '<button class="secondary" type="button" onclick="home()">← Retour à Accueil</button>';
-  page('🚚 Livraisons & courses',h);
+  page('🚚 Livraisons & courses',h);normalizeTemperatureFields();
   document.querySelectorAll('[data-choice]').forEach(function(b){b.onclick=function(){var id=b.getAttribute('data-choice');var inp=document.getElementById(id);if(inp)inp.value=b.getAttribute('data-value');document.querySelectorAll('[data-choice="'+id+'"]').forEach(function(x){x.classList.remove('selected')});b.classList.add('selected')}});
   var f=document.getElementById('dlFiles');if(f)f.onchange=function(){document.getElementById('dlFileCount').textContent=f.files.length+' pièce(s) sélectionnée(s).'};
   document.getElementById('saveDeliveryBtn').onclick=function(){saveDelivery()};
@@ -381,12 +441,12 @@ function menuTaskCorrect(id){var menu=(config.menus&&config.menus[today()])||[],
 function menuTaskPage(id){var menu=(config.menus&&config.menus[today()])||[],t=buildMenuTasks(menu).find(function(x){return x.id===id});if(!t)return;var x=menu[t.menuIndex],p=prepProfile(x.name,x.type),wf=ensureWorkflow(p),h=opSelect()+'<div class="notice"><b>'+esc(x.slot)+' — '+esc(x.name)+'</b><br>Un seul contrôle pour ce plat. Les étapes du parcours sont regroupées ici : vous remplissez uniquement les lignes qui correspondent au parcours choisi.</div>';
 if(!wf.length)wf=haccpDefaults(x.type).map(function(z,j){return {id:String(j),type:z,label:workflowTypes[z]||z}});
 wf.forEach(function(st,j){h+='<div class="stagebox"><b>'+esc(st.label||workflowTypes[st.type]||'Contrôle')+'</b>';var idp='dish_'+j;
-if(st.type==='cooking'||st.type==='frozenDirect')h+='<label>🌡️ Température cuisson mesurée °C</label><input id="'+idp+'_temp" type="number" step="0.1" inputmode="decimal">'+standardObservation(idp+'_obs','cooking');
-else if(st.type==='holding')h+='<label>Équipement de maintien</label>'+equipmentSelect(idp+'_equip')+'<label>🌡️ Température maintien °C</label><input id="'+idp+'_temp" type="number" step="0.1" inputmode="decimal">'+standardObservation(idp+'_obs','service');
-else if(st.type==='distribution')h+='<label>Heure de distribution</label><div class="row"><input id="'+idp+'_time" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"><button type="button" class="secondary" onclick="setNowTime(&apos;dish_'+j+'_time&apos;)">Maintenant</button></div><div class="muted">Saisissez l’heure au format HH:MM ou utilisez « Maintenant ». Le sélecteur d’horloge du téléphone n’est pas utilisé.</div><label>🌡️ Température au service °C (si applicable)</label><input id="'+idp+'_temp" type="number" step="0.1" inputmode="decimal">'+standardObservation(idp+'_obs','service');
-else if(st.type==='cooling')h+='<label>🌡️ Température départ °C</label><input id="'+idp+'_start" type="number" step="0.1"><label>🌡️ Température fin °C</label><input id="'+idp+'_end" type="number" step="0.1"><label>⏱️ Durée (minutes)</label><input id="'+idp+'_duration" type="number">'+standardObservation(idp+'_obs','observation');
-else if(st.type==='reheating')h+='<label>🌡️ Température départ °C</label><input id="'+idp+'_start" type="number" step="0.1"><label>🌡️ Température atteinte °C</label><input id="'+idp+'_end" type="number" step="0.1"><label>⏱️ Durée (minutes)</label><input id="'+idp+'_duration" type="number">'+standardObservation(idp+'_obs','cooking');
-else if(st.type==='storage'||st.type==='storageFrozen')h+='<label>Emplacement / équipement</label>'+equipmentSelect(idp+'_equip')+'<label>🌡️ Température mesurée °C</label><input id="'+idp+'_temp" type="number" step="0.1">'+standardObservation(idp+'_obs','observation');
+if(st.type==='cooking'||st.type==='frozenDirect')h+='<label>🌡️ Température cuisson mesurée °C</label><input id="'+idp+'_temp" type="text" inputmode="text" autocomplete="off">'+standardObservation(idp+'_obs','cooking');
+else if(st.type==='holding')h+='<label>Équipement de maintien</label>'+equipmentSelect(idp+'_equip')+'<label>🌡️ Température maintien °C</label><input id="'+idp+'_temp" type="text" inputmode="text" autocomplete="off">'+standardObservation(idp+'_obs','service');
+else if(st.type==='distribution')h+='<label>Heure de distribution</label><div class="row"><input id="'+idp+'_time" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" autocomplete="off"><button type="button" class="secondary" onclick="setNowTime(&apos;dish_'+j+'_time&apos;)">Maintenant</button></div><div class="muted">Saisissez l’heure au format HH:MM ou utilisez « Maintenant ». Le sélecteur d’horloge du téléphone n’est pas utilisé.</div><label>🌡️ Température au service °C (si applicable)</label><input id="'+idp+'_temp" type="text" inputmode="text" autocomplete="off">'+standardObservation(idp+'_obs','service');
+else if(st.type==='cooling')h+='<label>🌡️ Température départ °C</label><input id="'+idp+'_start" type="text" inputmode="text" autocomplete="off"><label>🌡️ Température fin °C</label><input id="'+idp+'_end" type="text" inputmode="text" autocomplete="off"><label>⏱️ Durée (minutes)</label><input id="'+idp+'_duration" type="number">'+standardObservation(idp+'_obs','observation');
+else if(st.type==='reheating')h+='<label>🌡️ Température départ °C</label><input id="'+idp+'_start" type="text" inputmode="text" autocomplete="off"><label>🌡️ Température atteinte °C</label><input id="'+idp+'_end" type="text" inputmode="text" autocomplete="off"><label>⏱️ Durée (minutes)</label><input id="'+idp+'_duration" type="number">'+standardObservation(idp+'_obs','cooking');
+else if(st.type==='storage'||st.type==='storageFrozen')h+='<label>Emplacement / équipement</label>'+equipmentSelect(idp+'_equip')+'<label>🌡️ Température mesurée °C</label><input id="'+idp+'_temp" type="text" inputmode="text" autocomplete="off">'+standardObservation(idp+'_obs','observation');
 else h+=standardObservation(idp+'_obs',st.type==='clean'?'cleaning':'observation');h+='</div>'});
 var lots=(config.traceLots||[]).filter(function(l){return l.active!==false}),linked=x.ingredients||[];h+='<div class="stagebox"><b>🔎 Traçabilité du plat</b><div class="muted">Sélectionnez les lots réellement utilisés. Ces mêmes lots sont enregistrés dans la rubrique Traçabilité.</div><div id="dishLots">';if(!lots.length)h+='<div class="muted">Aucun lot disponible.</div>';lots.forEach(function(l){h+='<label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" class="dishLot" value="'+esc(l.id)+'" '+(linked.indexOf(l.id)>=0?'checked':'')+'><span><b>'+esc(l.product||'Produit')+'</b><br><span class="muted">'+esc(l.supplier||'')+(l.lot?' · Lot '+esc(l.lot):'')+(l.dlc?' · DLC '+esc(l.dlc):'')+'</span></span></label>'});h+='</div><button type="button" class="secondary" id="addDishLot">＋ Ajouter un produit / lot</button><label>📷 Photos / étiquettes (facultatif)</label><input id="dishFiles" type="file" accept="image/*,.pdf" multiple capture="environment"><label>Observation libre (facultatif)</label><textarea id="dishFreeObs" placeholder="Seulement si nécessaire"></textarea></div><button type="button" class="save" id="saveDishControl">✓ Enregistrer le contrôle du plat</button>';
 page('🍽️ '+esc(x.name),h);
@@ -593,4 +653,4 @@ function addCustomEquipment(){var v=document.getElementById('newEquipment').valu
 function removeEquipment(i){if(!confirm('Supprimer cet équipement des paramètres ?'))return;config.equipment.splice(i,1);save();settings()}
 function renameEquipment(i){var old=typeof config.equipment[i]==='string'?config.equipment[i]:(config.equipment[i].name||'');var v=prompt('Nom de l’équipement :',old);if(v===null||!v.trim())return;config.equipment[i]=v.trim();save();settings()}
 function tick(){document.getElementById('clock').textContent=new Date().toLocaleString('fr-FR')}setInterval(tick,1000);tick();home();
-</script><script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=54').catch(()=>{}));}</script></body></html>
+</script><script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=57').catch(()=>{}));}</script></body></html>
